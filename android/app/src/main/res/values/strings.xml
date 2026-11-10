@@ -91,4 +91,6 @@
     <string name="led_count">Number of LEDs</string>
     <string name="sp_count_range">The SP110E supports 1 to 1024 LEDs.</string>
     <string name="sp_intro">Original SP110E controller: colors, brightness and its 120 built-in effects. Drawing and schedules need a PixelBlue (ESP32) controller.</string>
+    <string name="other_devices">Other Bluetooth devices nearby</string>
+    <string name="not_supported">%1$s is not a PixelBlue or SP110E controller.</string>
 </resources>

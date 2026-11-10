@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.pixelblue.R
 import io.github.pixelblue.ble.ConnState
+import io.github.pixelblue.ble.FoundDevice
 import io.github.pixelblue.ble.Kind
 import io.github.pixelblue.ble.PixelBle
 
@@ -82,6 +83,9 @@ fun BluetoothOffScreen(onEnable: () -> Unit) = CenterMessage(
 fun DeviceListScreen(ble: PixelBle, conn: ConnState) {
     val devices by ble.devices.collectAsStateWithLifecycle()
     val scanning by ble.scanning.collectAsStateWithLifecycle()
+    val notSupported by ble.notSupported.collectAsStateWithLifecycle()
+    val known = devices.filter { it.kind != null }
+    val others = devices.filter { it.kind == null }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding().padding(20.dp)) {
@@ -100,32 +104,23 @@ fun DeviceListScreen(ble: PixelBle, conn: ConnState) {
                 }
                 Spacer(Modifier.height(16.dp))
             }
+            notSupported?.let {
+                Text(stringResource(R.string.not_supported, it), color = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.height(12.dp))
+            }
 
             LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(devices, key = { it.address }) { d ->
-                    Card(
-                        Modifier.fillMaxWidth().clickable(enabled = conn != ConnState.Connecting) {
-                            ble.connect(d.address, d.name)
-                        },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    ) {
-                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Lightbulb, null, tint = MaterialTheme.colorScheme.secondary)
-                            Spacer(Modifier.width(14.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(d.name, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    (if (d.kind == Kind.SP110E) "SP110E · " else "PixelBlue · ") +
-                                        (if (d.address == ble.lastAddress) stringResource(R.string.last_used) else d.address),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Icon(Icons.Default.ChevronRight, null)
-                        }
-                    }
+                items(known, key = { it.address }) { d -> DeviceRow(ble, d, conn) }
+                if (others.isNotEmpty()) item {
+                    Text(
+                        stringResource(R.string.other_devices),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
                 }
-                if (devices.isEmpty()) {
+                items(others, key = { it.address }) { d -> DeviceRow(ble, d, conn) }
+                if (known.isEmpty() && others.isEmpty()) {
                     item {
                         Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                             Text(
@@ -152,4 +147,29 @@ fun DeviceListScreen(ble: PixelBle, conn: ConnState) {
             }
         }
     }
+}
+
+@Composable
+private fun DeviceRow(ble: PixelBle, d: FoundDevice, conn: ConnState) {
+        Card(
+            Modifier.fillMaxWidth().clickable(enabled = conn != ConnState.Connecting) {
+                ble.connect(d.address, d.name)
+            },
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Lightbulb, null, tint = MaterialTheme.colorScheme.secondary)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(d.name, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        (when (d.kind) { Kind.SP110E -> "SP110E · "; Kind.PIXELBLUE -> "PixelBlue · "; null -> "" }) +
+                            (if (d.address == ble.lastAddress) stringResource(R.string.last_used) else d.address),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Icon(Icons.Default.ChevronRight, null)
+            }
+        }
 }

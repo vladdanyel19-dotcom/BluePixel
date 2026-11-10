@@ -90,4 +90,6 @@
     <string name="led_count">Număr de LED-uri</string>
     <string name="sp_count_range">SP110E suportă între 1 și 1024 LED-uri.</string>
     <string name="sp_intro">Controler SP110E original: culori, luminozitate și cele 120 de efecte ale lui. Desenul și programul merg doar cu un controler PixelBlue (ESP32).</string>
+    <string name="other_devices">Alte dispozitive Bluetooth din jur</string>
+    <string name="not_supported">%1$s nu este un controler PixelBlue sau SP110E.</string>
 </resources>

@@ -31,7 +31,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.TimeZone
 import java.util.concurrent.ConcurrentHashMap
 
-data class FoundDevice(val address: String, val name: String, val rssi: Int, val kind: Kind)
+/** [kind] is null for other Bluetooth devices: checked after connecting. */
+data class FoundDevice(val address: String, val name: String, val rssi: Int, val kind: Kind?)
 
 enum class ConnState { Disconnected, Connecting, Connected }
 
@@ -61,6 +62,10 @@ class PixelBle(private val context: Context) {
 
     private val _state = MutableStateFlow<DeviceState?>(null)
     val state: StateFlow<DeviceState?> = _state.asStateFlow()
+
+    /** Set when a chosen device turned out not to be a supported controller. */
+    private val _notSupported = MutableStateFlow<String?>(null)
+    val notSupported: StateFlow<String?> = _notSupported.asStateFlow()
 
     private val _scanning = MutableStateFlow(false)
     val scanning: StateFlow<Boolean> = _scanning.asStateFlow()
@@ -259,8 +264,10 @@ class PixelBle(private val context: Context) {
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            val k = kindOf(result) ?: return
-            val name = result.scanRecord?.deviceName ?: result.device.name ?: "PixelBlue"
+            val k = kindOf(result)
+            // Unknown devices are listed too (if they have a name), so a renamed
+            // SP110E can still be picked; the services are checked on connect.
+            val name = result.scanRecord?.deviceName ?: result.device.name ?: return
             val found = FoundDevice(result.device.address, name, result.rssi, k)
             _devices.value = (_devices.value.filter { it.address != found.address } + found)
                 .sortedByDescending { it.rssi }
@@ -277,6 +284,7 @@ class PixelBle(private val context: Context) {
         closeGatt()
         isDemo = false
         autoConnect = true
+        _notSupported.value = null
         wantConnected = address
         connectedName = name.ifBlank { device.name ?: "PixelBlue" }
         prefs.edit().putString("last", address).putString("lastName", connectedName).apply()
@@ -370,7 +378,7 @@ class PixelBle(private val context: Context) {
                     status != BluetoothGatt.GATT_SUCCESS -> disconnect()
                     g.getService(Protocol.SERVICE) != null -> setupPixelBlue(g)
                     g.getService(Sp110e.SERVICE) != null -> setupSp110e(g)
-                    else -> disconnect()
+                    else -> { val n = connectedName; disconnect(); _notSupported.value = n }
                 }
             }
         }
