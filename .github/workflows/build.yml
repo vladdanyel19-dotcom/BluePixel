@@ -1,0 +1,84 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk ../PixelBlue.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PixelBlue-apk
+          path: PixelBlue.apk
+
+  firmware:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [esp32, esp32c3, esp32s3]
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ matrix.env }}-${{ hashFiles('firmware/platformio.ini') }}
+      - run: pip install platformio
+      - name: Build firmware
+        run: pio run -e ${{ matrix.env }}
+      - name: Merge into one flashable file
+        run: |
+          B=.pio/build/${{ matrix.env }}
+          CHIP=${{ matrix.env }}
+          BOOT_ADDR=0x1000
+          if [ "$CHIP" != "esp32" ]; then BOOT_ADDR=0x0; fi
+          BOOT_APP0=$(find ~/.platformio/packages/framework-arduinoespressif32 -name boot_app0.bin | head -1)
+          python ~/.platformio/packages/tool-esptoolpy/esptool.py --chip $CHIP merge_bin \
+            -o ../PixelBlue-${{ matrix.env }}.bin \
+            $BOOT_ADDR $B/bootloader.bin 0x8000 $B/partitions.bin 0xe000 $BOOT_APP0 0x10000 $B/firmware.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PixelBlue-firmware-${{ matrix.env }}
+          path: PixelBlue-${{ matrix.env }}.bin
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [android, firmware]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            PixelBlue.apk
+            PixelBlue-*.bin
