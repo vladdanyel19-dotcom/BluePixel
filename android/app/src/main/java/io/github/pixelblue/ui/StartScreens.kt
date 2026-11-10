@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.pixelblue.R
 import io.github.pixelblue.ble.ConnState
+import io.github.pixelblue.ble.Kind
 import io.github.pixelblue.ble.PixelBle
 
 @Composable
@@ -113,7 +115,8 @@ fun DeviceListScreen(ble: PixelBle, conn: ConnState) {
                             Column(Modifier.weight(1f)) {
                                 Text(d.name, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    if (d.address == ble.lastAddress) stringResource(R.string.last_used) else d.address,
+                                    (if (d.kind == Kind.SP110E) "SP110E · " else "PixelBlue · ") +
+                                        (if (d.address == ble.lastAddress) stringResource(R.string.last_used) else d.address),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -134,6 +137,9 @@ fun DeviceListScreen(ble: PixelBle, conn: ConnState) {
                 }
             }
 
+            TextButton(onClick = { ble.startDemo() }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.try_demo))
+            }
             OutlinedButton(
                 onClick = { ble.startScan() }, enabled = !scanning,
                 modifier = Modifier.fillMaxWidth(),

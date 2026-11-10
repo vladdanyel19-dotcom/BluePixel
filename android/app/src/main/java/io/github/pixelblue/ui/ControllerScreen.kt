@@ -12,6 +12,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -37,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import io.github.pixelblue.MainViewModel
 import io.github.pixelblue.R
 import io.github.pixelblue.ble.DeviceState
+import io.github.pixelblue.ble.Kind
 import io.github.pixelblue.ble.Protocol
 
 private data class Tab(val label: Int, val icon: ImageVector)
@@ -52,6 +55,10 @@ private val tabs = listOf(
 @Composable
 fun ControllerScreen(vm: MainViewModel, s: DeviceState) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val isSp = s.kind == Kind.SP110E
+    // SP110E: no pixel drawing and no clock, so only Color + Setup.
+    val visible = if (isSp) listOf(0, 3) else listOf(0, 1, 2, 3)
+    if (tab !in visible) tab = 0
 
     Scaffold(
         topBar = {
@@ -60,10 +67,19 @@ fun ControllerScreen(vm: MainViewModel, s: DeviceState) {
                     Column {
                         Text(vm.ble.connectedName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            stringResource(R.string.connected_info, s.config.count),
+                            when {
+                                vm.ble.isDemo -> stringResource(R.string.demo_info)
+                                isSp -> stringResource(R.string.connected_info_sp, s.config.count)
+                                else -> stringResource(R.string.connected_info, s.config.count)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = { vm.ble.disconnect() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
                     }
                 },
                 actions = {
@@ -80,7 +96,8 @@ fun ControllerScreen(vm: MainViewModel, s: DeviceState) {
         },
         bottomBar = {
             NavigationBar {
-                tabs.forEachIndexed { i, t ->
+                visible.forEach { i ->
+                    val t = tabs[i]
                     NavigationBarItem(
                         selected = tab == i, onClick = { tab = i },
                         icon = { Icon(t.icon, null) }, label = { Text(stringResource(t.label)) },
@@ -95,7 +112,7 @@ fun ControllerScreen(vm: MainViewModel, s: DeviceState) {
             0 -> ControlTab(vm, s, m)
             1 -> DrawTab(vm, s, m)
             2 -> ScheduleTab(vm, s, m)
-            else -> SetupTab(vm, s, m)
+            else -> if (isSp) SpSetupTab(vm, s, m) else SetupTab(vm, s, m)
         }
     }
 }

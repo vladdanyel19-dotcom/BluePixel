@@ -39,6 +39,7 @@ import io.github.pixelblue.R
 import io.github.pixelblue.ble.DeviceState
 import io.github.pixelblue.ble.HwConfig
 import io.github.pixelblue.ble.Protocol
+import io.github.pixelblue.ble.Sp110e
 
 private val LED_TYPES = listOf(
     "WS2812B / WS2813 / WS2815", "WS2811", "SK6812 RGBW", "APA102", "SK9822",
@@ -176,5 +177,41 @@ private fun Toggle(label: String, checked: Boolean, onToggle: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = { onToggle() })
+    }
+}
+
+/** Settings page for an original SP110E controller. */
+@Composable
+fun SpSetupTab(vm: MainViewModel, s: DeviceState, modifier: Modifier) {
+    var ic by remember(s.config.type) { mutableStateOf(s.config.type) }
+    var order by remember(s.config.order) { mutableStateOf(s.config.order) }
+    var countText by remember(s.config.width) { mutableStateOf(s.config.width.toString()) }
+    val count = countText.toIntOrNull()?.takeIf { it in 1..1024 }
+
+    Column(
+        modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(stringResource(R.string.sp_intro), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SectionTitle(stringResource(R.string.strip_section))
+        Picker(stringResource(R.string.led_type), Sp110e.IC_MODELS, ic) { ic = it }
+        Picker(stringResource(R.string.color_order), ORDERS, order) { order = it }
+        Text(stringResource(R.string.color_order_hint), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        NumberField(stringResource(R.string.led_count), countText, Modifier.fillMaxWidth()) { countText = it }
+        Button(
+            onClick = {
+                vm.ble.send(Protocol.spIcModel(ic))
+                vm.ble.send(Protocol.spOrder(order))
+                count?.let { vm.ble.send(Protocol.spCount(it)) }
+            },
+            enabled = count != null, modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(R.string.save_to_device)) }
+        if (count == null) Text(stringResource(R.string.sp_count_range), color = MaterialTheme.colorScheme.error)
+
+        OutlinedButton(onClick = { vm.ble.disconnect(forget = true) }, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.other_device))
+        }
+        Spacer(Modifier.height(16.dp))
     }
 }

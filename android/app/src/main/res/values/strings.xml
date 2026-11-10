@@ -10,7 +10,7 @@
     <string name="devices_subtitle">Tap your controller to connect</string>
     <string name="connecting">Connecting to %1$s…</string>
     <string name="last_used">Last used</string>
-    <string name="searching">Looking for PixelBlue controllers…\nMake sure the controller is powered.</string>
+    <string name="searching">Looking for PixelBlue and SP110E controllers…\nMake sure the controller is powered.</string>
     <string name="none_found">No controller found. Tap search to try again.</string>
     <string name="searching_short">Searching…</string>
     <string name="search_again">Search again</string>
@@ -84,4 +84,11 @@
     <string name="other_device">Connect to another controller</string>
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
+    <string name="try_demo">Try the app without a controller (demo)</string>
+    <string name="demo_info">Demo · simulated 16×16 matrix</string>
+    <string name="connected_info_sp">SP110E · %1$d LEDs</string>
+    <string name="back">Back</string>
+    <string name="led_count">Number of LEDs</string>
+    <string name="sp_count_range">The SP110E supports 1 to 1024 LEDs.</string>
+    <string name="sp_intro">Original SP110E controller: colors, brightness and its 120 built-in effects. Drawing and schedules need a PixelBlue (ESP32) controller.</string>
 </resources>

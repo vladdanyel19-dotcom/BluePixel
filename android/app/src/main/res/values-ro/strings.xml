@@ -9,7 +9,7 @@
     <string name="devices_subtitle">Atinge controlerul ca să te conectezi</string>
     <string name="connecting">Mă conectez la %1$s…</string>
     <string name="last_used">Folosit ultima dată</string>
-    <string name="searching">Caut controlere PixelBlue…\nVerifică să fie controlerul alimentat.</string>
+    <string name="searching">Caut controlere PixelBlue și SP110E…\nVerifică să fie controlerul alimentat.</string>
     <string name="none_found">Nu am găsit niciun controler. Apasă pe căutare ca să încerci din nou.</string>
     <string name="searching_short">Caut…</string>
     <string name="search_again">Caută din nou</string>
@@ -83,4 +83,11 @@
     <string name="other_device">Conectează alt controler</string>
     <string name="ok">OK</string>
     <string name="cancel">Anulează</string>
+    <string name="try_demo">Încearcă aplicația fără controler (demo)</string>
+    <string name="demo_info">Demo · matrice simulată 16×16</string>
+    <string name="connected_info_sp">SP110E · %1$d LED-uri</string>
+    <string name="back">Înapoi</string>
+    <string name="led_count">Număr de LED-uri</string>
+    <string name="sp_count_range">SP110E suportă între 1 și 1024 LED-uri.</string>
+    <string name="sp_intro">Controler SP110E original: culori, luminozitate și cele 120 de efecte ale lui. Desenul și programul merg doar cu un controler PixelBlue (ESP32).</string>
 </resources>

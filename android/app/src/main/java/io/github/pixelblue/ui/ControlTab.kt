@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import io.github.pixelblue.MainViewModel
 import io.github.pixelblue.R
 import io.github.pixelblue.ble.DeviceState
+import io.github.pixelblue.ble.Kind
+import io.github.pixelblue.ble.Sp110e
 import io.github.pixelblue.ble.Protocol
 
 val EFFECT_NAMES = listOf(
@@ -75,6 +77,8 @@ private fun hsvOf(r: Int, g: Int, b: Int): FloatArray {
 fun ControlTab(vm: MainViewModel, s: DeviceState, modifier: Modifier) {
     val ble = vm.ble
     var target by rememberSaveable { mutableIntStateOf(0) }   // 0 = main color, 1 = background color
+    val isSp = s.kind == Kind.SP110E
+    if (isSp && target == 1) target = 0
     val remoteRgb = if (target == 0) Triple(s.r, s.g, s.b) else Triple(s.r2, s.g2, s.b2)
 
     var hue by remember { mutableFloatStateOf(0f) }
@@ -102,7 +106,7 @@ fun ControlTab(vm: MainViewModel, s: DeviceState, modifier: Modifier) {
         modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!isSp) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(target == 0, { target = 0 }, { Text(stringResource(R.string.color_main)) },
                 leadingIcon = { Dot(Color(s.r, s.g, s.b)) })
             FilterChip(target == 1, { target = 1 }, { Text(stringResource(R.string.color_background)) },
@@ -126,14 +130,29 @@ fun ControlTab(vm: MainViewModel, s: DeviceState, modifier: Modifier) {
         LabeledSlider(stringResource(R.string.brightness), bri.value) {
             bri.local(it); ble.send(Protocol.brightness(it.toInt()), "bri")
         }
-        if (s.config.type == 2) {
+        if (isSp || s.config.type == 2) {
             LabeledSlider(stringResource(R.string.white_channel), white.value) {
                 white.local(it); ble.send(Protocol.color(s.r, s.g, s.b, it.toInt()), "color")
             }
         }
 
         SectionTitle(stringResource(R.string.effects))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (isSp) {
+            FilterChip(
+                selected = s.effect == Sp110e.STATIC_MODE,
+                onClick = { ble.send(Protocol.effect(Sp110e.STATIC_MODE)) },
+                label = { Text(stringResource(R.string.fx_solid)) },
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                for (n in 1..Sp110e.PRESETS) {
+                    FilterChip(
+                        selected = s.effect == n,
+                        onClick = { ble.send(Protocol.effect(n)) },
+                        label = { Text("$n") },
+                    )
+                }
+            }
+        } else FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             EFFECT_NAMES.forEachIndexed { id, name ->
                 if (id == FX_CANVAS || id == FX_TEXT || id >= s.effectCount) return@forEachIndexed
                 FilterChip(
@@ -147,8 +166,8 @@ fun ControlTab(vm: MainViewModel, s: DeviceState, modifier: Modifier) {
             speed.local(it); ble.send(Protocol.speed(it.toInt()), "speed")
         }
 
-        SectionTitle(stringResource(R.string.scrolling_text))
-        OutlinedTextField(
+        if (!isSp) SectionTitle(stringResource(R.string.scrolling_text))
+        if (!isSp) OutlinedTextField(
             value = text, onValueChange = { if (it.length <= 120) text = it },
             modifier = Modifier.fillMaxWidth(), singleLine = true,
             placeholder = { Text(stringResource(R.string.text_hint)) },
