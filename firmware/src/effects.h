@@ -63,6 +63,17 @@ class Effects {
     textStart_ = millis();
   }
 
+  RGB* canvasData() { return canvas_; }
+  const char* textStr() const { return text_; }
+
+  void setFlag(const uint8_t* c) { memcpy(flag_, c, 9); }
+
+  void setBands(const uint8_t* d, size_t n) {
+    nBands_ = n > PB_MAX_BANDS ? PB_MAX_BANDS : n;
+    memcpy(bands_, d, nBands_);
+    bandsAt_ = millis();
+  }
+
   void restart() { memset(work_, 0, n_); start_ = millis(); textStart_ = millis(); }
 
   // Render one frame of `fx` into the logical buffer.
@@ -181,6 +192,8 @@ class Effects {
         break;
 
       case FX_TEXT: text(now, s, c1, c2); break;
+      case FX_FLAG: flag(tt); break;
+      case FX_MUSIC: music(now); break;
 
       default: fill(c1); break;
     }
@@ -294,6 +307,53 @@ class Effects {
     }
   }
 
+  // Waving tricolor: three vertical bands with a moving light/shade ripple.
+  void flag(uint32_t tt) {
+    for (uint16_t y = 0; y < h_; y++)
+      for (uint16_t x = 0; x < w_; x++) {
+        uint8_t band = (uint32_t)x * 3 / w_;
+        const uint8_t* c = flag_ + band * 3;
+        uint8_t ph = (uint8_t)(x * 256 / (w_ > 16 ? 16 : w_) + y * 10 - tt / 6);
+        uint8_t v = 150 + scale8(sin8_[ph], 105);
+        at(x, y) = {scale8(c[0], v), scale8(c[1], v), scale8(c[2], v)};
+      }
+  }
+
+  // Spectrum bars from the phone microphone (bands sent by the app).
+  void music(uint32_t now) {
+    if (now - bandsAt_ > 400) {               // no fresh data: let the bars fall
+      for (int i = 0; i < nBands_; i++) bands_[i] = scale8(bands_[i], 230);
+      bandsAt_ = now - 300;
+    }
+    for (uint16_t i = 0; i < n_; i++) frame_[i] = {0, 0, 0};
+    if (!nBands_) return;
+    if (h_ > 1) {
+      for (uint16_t x = 0; x < w_; x++) {
+        uint8_t v = bands_[(uint32_t)x * nBands_ / w_];
+        uint16_t bar = ((uint32_t)v * h_ + 127) / 255;
+        for (uint16_t k = 0; k < bar; k++) {
+          uint16_t y = h_ - 1 - k;
+          at(x, y) = hsv(96 - (uint32_t)k * 96 / h_, 255, 255);   // green bottom -> red top
+        }
+      }
+    } else {
+      uint32_t sum = 0;
+      for (int i = 0; i < nBands_; i++) sum += bands_[i];
+      uint8_t level = sum / nBands_;
+      uint16_t len = (uint32_t)level * (w_ / 2) / 255;
+      uint16_t mid = w_ / 2;
+      for (uint16_t k = 0; k < len; k++) {
+        RGB c = hsv(96 - (uint32_t)k * 96 / (mid ? mid : 1), 255, 255);
+        if (mid + k < w_) frame_[mid + k] = c;
+        if (mid >= k + 1) frame_[mid - 1 - k] = c;
+      }
+    }
+  }
+
+  uint8_t flag_[9] = {0x00, 0x2B, 0x7F, 0xFC, 0xD1, 0x16, 0xCE, 0x11, 0x26};
+  uint8_t bands_[PB_MAX_BANDS] = {0};
+  uint8_t nBands_ = 0;
+  uint32_t bandsAt_ = 0;
   uint16_t w_ = 1, h_ = 1, n_ = 1;
   RGB* frame_ = nullptr;
   RGB* canvas_ = nullptr;

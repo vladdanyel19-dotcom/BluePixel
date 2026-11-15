@@ -56,10 +56,11 @@ val EFFECT_NAMES = listOf(
     R.string.fx_breathe, R.string.fx_wipe, R.string.fx_theater, R.string.fx_twinkle,
     R.string.fx_fire, R.string.fx_comet, R.string.fx_strobe, R.string.fx_police,
     R.string.fx_sparkle, R.string.fx_gradient, R.string.fx_matrix, R.string.fx_plasma,
-    R.string.fx_text,
+    R.string.fx_text, R.string.fx_flag, R.string.fx_music,
 )
-private const val FX_CANVAS = 1
-private const val FX_TEXT = 16
+private const val FX_CANVAS = Protocol.FX_CANVAS
+private const val FX_TEXT = Protocol.FX_TEXT
+private const val FX_MUSIC = Protocol.FX_MUSIC
 
 private val SWATCHES = listOf(
     0xFF0000, 0xFF5000, 0xFFB000, 0x00FF00, 0x00FFB0, 0x00A0FF,
@@ -154,7 +155,7 @@ fun ControlTab(vm: MainViewModel, s: DeviceState, modifier: Modifier) {
             }
         } else FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             EFFECT_NAMES.forEachIndexed { id, name ->
-                if (id == FX_CANVAS || id == FX_TEXT || id >= s.effectCount) return@forEachIndexed
+                if (id == FX_CANVAS || id == FX_TEXT || id == FX_MUSIC || id >= s.effectCount) return@forEachIndexed
                 FilterChip(
                     selected = s.effect == id,
                     onClick = { ble.send(Protocol.effect(id)) },
@@ -166,15 +167,18 @@ fun ControlTab(vm: MainViewModel, s: DeviceState, modifier: Modifier) {
             speed.local(it); ble.send(Protocol.speed(it.toInt()), "speed")
         }
 
+        if (!isSp && s.effect == Protocol.FX_FLAG) FlagColors(vm, s)
+        if (!isSp && s.effectCount > FX_MUSIC) MusicSection(vm, s)
+
         if (!isSp) SectionTitle(stringResource(R.string.scrolling_text))
         if (!isSp) OutlinedTextField(
             value = text, onValueChange = { if (it.length <= 120) text = it },
             modifier = Modifier.fillMaxWidth(), singleLine = true,
             placeholder = { Text(stringResource(R.string.text_hint)) },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) ble.send(Protocol.text(text)) }),
+            keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) { vm.lastText = text; ble.send(Protocol.text(text)) } }),
             trailingIcon = {
-                IconButton(onClick = { if (text.isNotBlank()) ble.send(Protocol.text(text)) }) {
+                IconButton(onClick = { if (text.isNotBlank()) { vm.lastText = text; ble.send(Protocol.text(text)) } }) {
                     Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.send))
                 }
             },

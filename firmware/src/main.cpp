@@ -4,6 +4,8 @@
 #include <NimBLEDevice.h>
 #include <Preferences.h>
 #include <esp_timer.h>
+#include <LittleFS.h>
+#include <Update.h>
 #include "config.h"
 #include "strip.h"
 #include "effects.h"
@@ -12,12 +14,15 @@ static HwConfig     hw;
 static LightState   st;
 static ScheduleSlot sched[PB_MAX_SCHEDULES];
 static char         devName[PB_MAX_NAME + 1];
+static NightMode    night;
+static FlagColors   flagCols;
 
 static Strip   strip;
 static Effects fx;
 static Preferences prefs;
 
 static NimBLECharacteristic* stateChar = nullptr;
+static NimBLECharacteristic* otaChar = nullptr;
 static volatile bool connected = false;
 
 // Time: UTC epoch captured at the last sync + local offset.
@@ -31,6 +36,12 @@ static int32_t  lastMinuteChecked = -1;
 static bool     stateDirty = false;      // needs notify
 static uint32_t saveAt = 0;              // millis when to persist LightState (0 = nothing pending)
 static uint32_t restartAt = 0;
+static uint32_t canvasSaveAt = 0;       // millis when to persist the drawing (0 = nothing pending)
+static bool     fsOk = false;
+
+// Firmware update over Bluetooth. Status: 0 idle, 1 receiving, 2 done, 3 error.
+static volatile uint8_t  otaStatus = 0;
+static volatile uint32_t otaSize = 0, otaWritten = 0;
 
 // ---------------------------------------------------------------- packet queue
 // BLE writes arrive on the NimBLE task; we copy them into a queue and handle
@@ -54,6 +65,8 @@ static void loadAll() {
   if (prefs.getBytesLength("hw") == sizeof(hw)) prefs.getBytes("hw", &hw, sizeof(hw));
   if (prefs.getBytesLength("st") == sizeof(st)) prefs.getBytes("st", &st, sizeof(st));
   if (prefs.getBytesLength("sch") == sizeof(sched)) prefs.getBytes("sch", sched, sizeof(sched));
+  if (prefs.getBytesLength("nt") == sizeof(night)) prefs.getBytes("nt", &night, sizeof(night));
+  if (prefs.getBytesLength("fl") == sizeof(flagCols)) prefs.getBytes("fl", &flagCols, sizeof(flagCols));
   String n = prefs.getString("name", "");
   prefs.end();
 
@@ -71,6 +84,33 @@ static void saveHw()    { prefs.begin("pb", false); prefs.putBytes("hw", &hw, si
 static void saveSched() { prefs.begin("pb", false); prefs.putBytes("sch", sched, sizeof(sched)); prefs.end(); }
 static void saveState() { prefs.begin("pb", false); prefs.putBytes("st", &st, sizeof(st)); prefs.end(); }
 static void saveName()  { prefs.begin("pb", false); prefs.putString("name", devName); prefs.end(); }
+static void saveNight() { prefs.begin("pb", false); prefs.putBytes("nt", &night, sizeof(night)); prefs.end(); }
+static void saveFlag()  { prefs.begin("pb", false); prefs.putBytes("fl", &flagCols, sizeof(flagCols)); prefs.end(); }
+static void saveText()  { prefs.begin("pb", false); prefs.putString("txt", fx.textStr()); prefs.end(); }
+
+// The drawing lives in a small file so it comes back after a power cut.
+static void saveCanvas() {
+  if (!fsOk) return;
+  File f = LittleFS.open("/canvas.bin", "w");
+  if (!f) return;
+  f.write((const uint8_t*)fx.canvasData(), (size_t)fx.count() * sizeof(RGB));
+  f.close();
+}
+
+static void loadCanvasAndText() {
+  if (fsOk) {
+    File f = LittleFS.open("/canvas.bin", "r");
+    if (f) {
+      if (f.size() == (size_t)fx.count() * sizeof(RGB)) f.read((uint8_t*)fx.canvasData(), f.size());
+      f.close();
+    }
+  }
+  prefs.begin("pb", true);
+  String t = prefs.getString("txt", "");
+  prefs.end();
+  if (t.length()) fx.setText(t.c_str(), t.length());
+  fx.setFlag(flagCols.c);
+}
 
 static void stateChanged(bool persist = true) {
   stateDirty = true;
@@ -101,6 +141,13 @@ static bool insideWindow(int64_t now) {
     }
   }
   return false;
+}
+
+static bool inNight() {
+  if (!night.enabled || !timeValid || night.start == night.end) return false;
+  const int minute = (int)((localNow() % 86400) / 60);
+  if (night.start < night.end) return minute >= night.start && minute < night.end;
+  return minute >= night.start || minute < night.end;
 }
 
 static bool anyScheduleEnabled() {
@@ -135,7 +182,7 @@ static void checkSchedule() {
 
 // ---------------------------------------------------------------- state packet
 static void buildState(uint8_t* p) {
-  memset(p, 0, 64);
+  memset(p, 0, PB_STATE_SIZE);
   p[0] = PB_PROTOCOL;
   p[1] = st.power; p[2] = st.brightness; p[3] = st.effect; p[4] = st.speed;
   p[5] = st.r; p[6] = st.g; p[7] = st.b; p[8] = st.w;
@@ -156,11 +203,17 @@ static void buildState(uint8_t* p) {
   }
   p[49] = st.r2; p[50] = st.g2; p[51] = st.b2;
   p[52] = PB_CHIP;
+  p[53] = night.start & 0xFF; p[54] = night.start >> 8;
+  p[55] = night.end & 0xFF;   p[56] = night.end >> 8;
+  p[57] = night.level; p[58] = night.enabled;
+  memcpy(p + 59, flagCols.c, 9);
+  p[68] = inNight();
+  p[69] = otaStatus;
 }
 
 static void notifyState() {
   if (!stateChar) return;
-  uint8_t p[64];
+  uint8_t p[PB_STATE_SIZE];
   buildState(p);
   stateChar->setValue(p, sizeof(p));
   if (connected) stateChar->notify();
@@ -239,8 +292,30 @@ static void handleCmd(const uint8_t* d, size_t n) {
         restartAt = millis() + 400;
       }
       break;
-    case 0x0A: if (n >= 3) { fx.fillCanvas(d[0], d[1], d[2]); st.effect = FX_CANVAS; st.power = 1; stateChanged(); } break;
-    case 0x0B: fx.setText((const char*)d, n); st.effect = FX_TEXT; st.power = 1; stateChanged(); break;
+    case 0x0A: if (n >= 3) { fx.fillCanvas(d[0], d[1], d[2]); canvasSaveAt = millis() + 3000; st.effect = FX_CANVAS; st.power = 1; stateChanged(); } break;
+    case 0x0B: fx.setText((const char*)d, n); saveText(); st.effect = FX_TEXT; st.power = 1; stateChanged(); break;
+    case 0x0D:
+      if (n >= 6) {
+        night.start = min<uint16_t>(rd16(d), 1439);
+        night.end = min<uint16_t>(rd16(d + 2), 1439);
+        night.level = d[4];
+        night.enabled = d[5] ? 1 : 0;
+        saveNight();
+        stateChanged(false);
+      }
+      break;
+    case 0x0E:
+      if (n >= 9) {
+        memcpy(flagCols.c, d, 9);
+        fx.setFlag(flagCols.c);
+        saveFlag();
+        stateChanged(false);
+      }
+      break;
+    case 0x0F:   // music bands: values 0..255, live (not saved)
+      fx.setBands(d, n);
+      if (st.effect != FX_MUSIC) { st.effect = FX_MUSIC; st.power = 1; stateChanged(false); }
+      break;
     case 0x0C: if (n >= 3) { st.r2 = d[0]; st.g2 = d[1]; st.b2 = d[2]; stateChanged(); } break;
   }
 }
@@ -250,6 +325,7 @@ static void handlePixels(const uint8_t* d, size_t n) {
   uint16_t off = rd16(d);
   d += 2; n -= 2;
   for (size_t i = 0; i + 2 < n; i += 3) fx.setCanvasPixel(off++, d[i], d[i + 1], d[i + 2]);
+  canvasSaveAt = millis() + 3000;
   if (st.effect != FX_CANVAS || !st.power) { st.effect = FX_CANVAS; st.power = 1; stateChanged(); }
 }
 
@@ -262,14 +338,51 @@ class ServerCB : public NimBLEServerCallbacks {
   }
   void onDisconnect(NimBLEServer*, NimBLEConnInfo&, int) override {
     connected = false;
+    if (otaStatus == 1) { Update.abort(); otaStatus = 0; }
     NimBLEDevice::startAdvertising();
   }
 };
 
+// OTA begin/end run right here on the BLE task, so they are in order with
+// the data chunks that follow (which also arrive on this task).
+static void otaBegin(uint32_t size) {
+  if (otaStatus == 1) Update.abort();
+  otaSize = size;
+  otaWritten = 0;
+  otaStatus = Update.begin(size, U_FLASH) ? 1 : 3;
+}
+
+static void otaEnd() {
+  if (otaStatus != 1) return;
+  bool ok = otaWritten == otaSize && Update.end(true);
+  if (!ok) Update.abort();
+  otaStatus = ok ? 2 : 3;
+  if (ok) restartAt = millis() + 1500;
+}
+
 class CmdCB : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* c, NimBLEConnInfo&) override {
     NimBLEAttValue v = c->getValue();
-    enqueue(PK_CMD, v.data(), v.length());
+    const uint8_t* d = v.data();
+    size_t n = v.length();
+    if (n >= 5 && d[0] == 0x10) { otaBegin(d[1] | (d[2] << 8) | (d[3] << 16) | ((uint32_t)d[4] << 24)); stateDirty = true; return; }
+    if (n >= 1 && d[0] == 0x11) { otaEnd(); stateDirty = true; return; }
+    if (n >= 1 && d[0] == 0x12) { if (otaStatus == 1) Update.abort(); otaStatus = 0; stateDirty = true; return; }
+    enqueue(PK_CMD, d, n);
+  }
+};
+
+class OtaCB : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* c, NimBLEConnInfo&) override {
+    if (otaStatus != 1) return;
+    NimBLEAttValue v = c->getValue();
+    if (Update.write((uint8_t*)v.data(), v.length()) != v.length()) {
+      Update.abort();
+      otaStatus = 3;
+      stateDirty = true;
+      return;
+    }
+    otaWritten += v.length();
   }
 };
 
@@ -294,6 +407,8 @@ static void startBle() {
   NimBLECharacteristic* px = svc->createCharacteristic(
       PB_PIXELS_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
   px->setCallbacks(new PixelsCB());
+  otaChar = svc->createCharacteristic(PB_OTA_UUID, NIMBLE_PROPERTY::WRITE);
+  otaChar->setCallbacks(new OtaCB());
   svc->start();
   notifyState();
 
@@ -316,6 +431,7 @@ static void showFrame() {
 
   // Estimate the current draw and scale brightness down to stay inside maxmA.
   uint8_t bri = st.power ? st.brightness : 0;
+  if (inNight() && bri > night.level) bri = night.level;
   if (hw.maxmA && bri) {
     uint32_t sum = 0;
     for (uint32_t i = 0; i < (uint32_t)w * h; i++) sum += f[i].r + f[i].g + f[i].b;
@@ -344,7 +460,9 @@ void setup() {
     hw.type = LED_WS2812;
     strip.begin(hw);
   }
+  fsOk = LittleFS.begin(true);
   fx.begin(hw.width, hw.height);
+  loadCanvasAndText();
   fx.restart();
   startBle();
   Serial.printf("PixelBlue %d.%d ready as '%s'\n", PB_FW_MAJOR, PB_FW_MINOR, devName);
@@ -363,7 +481,8 @@ void loop() {
 
   static uint32_t lastFrame = 0;
   const uint32_t now = millis();
-  if (now - lastFrame >= 20) {   // ~50 fps
+  // During a firmware update the LEDs pause, so flash writes get all the time they need.
+  if (otaStatus != 1 && now - lastFrame >= 20) {   // ~50 fps
     lastFrame = now;
     fx.render(st.effect, st);
     showFrame();
@@ -371,6 +490,10 @@ void loop() {
 
   if (stateDirty) { stateDirty = false; notifyState(); }
   if (saveAt && (int32_t)(now - saveAt) >= 0) { saveAt = 0; saveState(); }
+  if (canvasSaveAt && otaStatus != 1 && (int32_t)(now - canvasSaveAt) >= 0) { canvasSaveAt = 0; saveCanvas(); }
+  static bool lastNight = false;
+  bool nowNight = inNight();
+  if (nowNight != lastNight) { lastNight = nowNight; stateDirty = true; }
   if (restartAt && (int32_t)(now - restartAt) >= 0) { ESP.restart(); }
   delay(1);
 }

@@ -10,6 +10,7 @@ All multi-byte integers are little-endian.
 | CMD    | `c0de0002-5ee1-4b1e-9e0d-50a3c1b2e000` | write, write-no-resp  |
 | STATE  | `c0de0003-5ee1-4b1e-9e0d-50a3c1b2e000` | read, notify          |
 | PIXELS | `c0de0004-5ee1-4b1e-9e0d-50a3c1b2e000` | write-no-resp, write  |
+| OTA    | `c0de0005-5ee1-4b1e-9e0d-50a3c1b2e000` | write (firmware data chunks) |
 
 The device advertises the service UUID, so apps can filter scans by it.
 
@@ -29,6 +30,12 @@ The device advertises the service UUID, so apps can filter scans by it.
 | 0x0A | CLEAR      | `r:u8 g:u8 b:u8` fills the canvas and switches to the Canvas effect |
 | 0x0B | TEXT       | UTF-8 text (max 120 bytes) → switches to the Text effect |
 | 0x0C | COLOR2     | `r:u8 g:u8 b:u8` (secondary / background color) |
+| 0x0D | NIGHT      | `start:u16 end:u16 level:u8 enabled:u8` brightness cap between two times |
+| 0x0E | FLAG       | 3 × `r g b` colors for the waving flag effect |
+| 0x0F | MUSIC      | up to 64 band levels (0..255), low to high; switches to the Music effect |
+| 0x10 | OTA_BEGIN  | `size:u32`, then write the image to OTA in chunks |
+| 0x11 | OTA_END    | verify and restart into the new firmware |
+| 0x12 | OTA_ABORT  | cancel an update |
 
 ### LED types (`type`)
 0 WS2812/WS2812B/WS2813/WS2815 (800 kHz) · 1 WS2811 (400 kHz) · 2 SK6812 RGBW · 3 APA102 · 4 SK9822
@@ -46,7 +53,7 @@ bit0 serpentine (zig-zag) · bit1 vertical (wired in columns) · bit2 start righ
 `offset:u16` followed by RGB triplets. `offset` is the logical index `x + y*width`.
 Writing pixels switches the device to the Canvas effect.
 
-## STATE (read / notify), 64 bytes
+## STATE (read / notify), 96 bytes (firmware 0.1 sent 64)
 
 | Offset | Field |
 |-------:|-------|
@@ -71,10 +78,14 @@ Writing pixels switches the device to the Canvas effect.
 | 25 | n × 6 bytes schedule (start u16, end u16, days, enabled), 4 slots reserved (24 bytes) |
 | 49 | color2 r, g, b |
 | 52 | chip: 0 ESP32, 1 C3, 2 S3, 3 C6, 255 other |
-| 53..63 | reserved |
+| 53 | night start u16, end u16, level, enabled (6 bytes) |
+| 59 | flag colors, 3 × RGB (9 bytes) |
+| 68 | night mode active now |
+| 69 | OTA status: 0 idle, 1 receiving, 2 done, 3 error |
+| 70..95 | reserved |
 
 ## Effects
 
 0 Solid · 1 Canvas · 2 Rainbow · 3 Rainbow wave · 4 Breathe · 5 Color wipe · 6 Theater chase ·
 7 Twinkle · 8 Fire · 9 Comet · 10 Strobe · 11 Police · 12 Sparkle · 13 Gradient ·
-14 Matrix rain · 15 Plasma · 16 Scrolling text
+14 Matrix rain · 15 Plasma · 16 Scrolling text · 17 Waving flag · 18 Music

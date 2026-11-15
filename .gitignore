@@ -6,3 +6,4 @@ local.properties
 .pio/
 .vscode/
 *.apk
+android/app/src/main/assets/fw/

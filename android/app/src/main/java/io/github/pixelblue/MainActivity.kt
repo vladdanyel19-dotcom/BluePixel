@@ -2,6 +2,7 @@ package io.github.pixelblue
 
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -40,6 +41,10 @@ class MainActivity : ComponentActivity() {
 
     private fun hasPermissions() = permissions.all {
         ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+    }
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(Lang.wrap(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

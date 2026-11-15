@@ -2,13 +2,16 @@
 #include <Arduino.h>
 
 #define PB_FW_MAJOR 0
-#define PB_FW_MINOR 1
+#define PB_FW_MINOR 2
 #define PB_PROTOCOL 1
 
 #define PB_SERVICE_UUID "c0de0001-5ee1-4b1e-9e0d-50a3c1b2e000"
 #define PB_CMD_UUID     "c0de0002-5ee1-4b1e-9e0d-50a3c1b2e000"
 #define PB_STATE_UUID   "c0de0003-5ee1-4b1e-9e0d-50a3c1b2e000"
 #define PB_PIXELS_UUID  "c0de0004-5ee1-4b1e-9e0d-50a3c1b2e000"
+#define PB_OTA_UUID     "c0de0005-5ee1-4b1e-9e0d-50a3c1b2e000"
+#define PB_STATE_SIZE   96
+#define PB_MAX_BANDS    64
 
 #define PB_MAX_LEDS      2048
 #define PB_MAX_SCHEDULES 4
@@ -28,7 +31,7 @@ enum Layout : uint8_t {
 enum Effect : uint8_t {
   FX_SOLID = 0, FX_CANVAS, FX_RAINBOW, FX_RAINBOW_WAVE, FX_BREATHE, FX_WIPE, FX_THEATER,
   FX_TWINKLE, FX_FIRE, FX_COMET, FX_STROBE, FX_POLICE, FX_SPARKLE, FX_GRADIENT,
-  FX_MATRIX, FX_PLASMA, FX_TEXT,
+  FX_MATRIX, FX_PLASMA, FX_TEXT, FX_FLAG, FX_MUSIC,
   FX_COUNT
 };
 
@@ -74,4 +77,15 @@ struct __attribute__((packed)) ScheduleSlot {
   uint16_t end     = 0;   // minute of day, power OFF
   uint8_t  days    = 0x7F; // bit0 = Monday ... bit6 = Sunday
   uint8_t  enabled = 0;
+};
+
+struct __attribute__((packed)) NightMode {
+  uint16_t start   = 20 * 60;  // minute of day when dimming begins
+  uint16_t end     = 6 * 60;   // minute of day when it ends
+  uint8_t  level   = 40;       // brightness cap at night (0..255)
+  uint8_t  enabled = 0;
+};
+
+struct __attribute__((packed)) FlagColors {
+  uint8_t c[9] = {0x00, 0x2B, 0x7F,  0xFC, 0xD1, 0x16,  0xCE, 0x11, 0x26};  // Romania
 };

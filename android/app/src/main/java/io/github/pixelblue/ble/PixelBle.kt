@@ -92,15 +92,19 @@ class PixelBle(private val context: Context) {
     private var pixChar: BluetoothGattCharacteristic? = null
     private var stateChar: BluetoothGattCharacteristic? = null
     private var auxChar: BluetoothGattCharacteristic? = null
+    private var otaChar: BluetoothGattCharacteristic? = null
     private var wantConnected: String? = null
     private var autoConnect = true   // off after the user leaves a controller on purpose
     private var mtu = 23
 
     // ------------------------------------------------------------ operation queue
-    private enum class Target { CMD, PIXELS, AUX }
+    private enum class Target { CMD, PIXELS, AUX, OTA }
 
     private sealed class Op {
-        data class Write(val key: String?, val data: ByteArray?, val target: Target) : Op()
+        data class Write(
+            val key: String?, val data: ByteArray?, val target: Target,
+            val done: ((Boolean) -> Unit)? = null,
+        ) : Op()
         data object EnableNotify : Op()
         data object ReadState : Op()
         data object RequestMtu : Op()
@@ -126,12 +130,15 @@ class PixelBle(private val context: Context) {
                             Target.CMD -> cmdChar
                             Target.PIXELS -> pixChar
                             Target.AUX -> auxChar
-                        } ?: continue
+                            Target.OTA -> otaChar
+                        }
+                        if (ch == null) { op.done?.invoke(false); continue }
                         val canAck = ch.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
                         val type = if (op.target == Target.PIXELS || !canAck)
                             BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
                         else BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                        if (writeChar(g, ch, data, type)) awaitOp()
+                        val ok = writeChar(g, ch, data, type) && (type == BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE || awaitOp(5000))
+                        op.done?.invoke(ok)
                     }
                 }
             }
@@ -214,6 +221,34 @@ class PixelBle(private val context: Context) {
         }
     }
 
+    /** True when the connected controller can be updated over Bluetooth. */
+    val canUpdate: Boolean get() = otaChar != null && !isDemo
+
+    /**
+     * Sends a new firmware image over Bluetooth. Progress is reported 0..1;
+     * [onDone] gets true once the controller accepted the whole image (it then restarts).
+     */
+    fun updateFirmware(image: ByteArray, onProgress: (Float) -> Unit, onDone: (Boolean) -> Unit) {
+        if (!canUpdate || _conn.value != ConnState.Connected) { onDone(false); return }
+        val chunk = (mtu - 3).coerceIn(20, 512)
+        val total = (image.size + chunk - 1) / chunk
+        var sent = 0
+        var failed = false
+        fun fail() { if (!failed) { failed = true; onDone(false) } }
+        ops.trySend(Op.Write(null, Protocol.otaBegin(image.size), Target.CMD) { if (!it) fail() })
+        var pos = 0
+        while (pos < image.size) {
+            val end = minOf(image.size, pos + chunk)
+            ops.trySend(Op.Write(null, image.copyOfRange(pos, end), Target.OTA) { ok ->
+                if (!ok) fail()
+                sent++
+                if (sent % 16 == 0 || sent == total) onProgress(sent.toFloat() / total)
+            })
+            pos = end
+        }
+        ops.trySend(Op.Write(null, Protocol.OTA_END, Target.CMD) { ok -> if (!failed) onDone(ok) })
+    }
+
     /** Opens the full interface with a simulated 16x16 matrix, no hardware needed. */
     fun startDemo() {
         stopScan()
@@ -222,6 +257,7 @@ class PixelBle(private val context: Context) {
         isDemo = true
         kind = Kind.PIXELBLUE
         connectedName = "Demo"
+        otaChar = null
         _state.value = DeviceState.demo()
         _conn.value = ConnState.Connected
     }
@@ -312,7 +348,7 @@ class PixelBle(private val context: Context) {
             try { it.close() } catch (_: Exception) {}
         }
         gatt = null
-        cmdChar = null; pixChar = null; stateChar = null; auxChar = null
+        cmdChar = null; pixChar = null; stateChar = null; auxChar = null; otaChar = null
         mtu = 23
     }
 
@@ -330,6 +366,7 @@ class PixelBle(private val context: Context) {
         cmdChar = svc.getCharacteristic(Protocol.CMD)
         pixChar = svc.getCharacteristic(Protocol.PIXELS)
         stateChar = svc.getCharacteristic(Protocol.STATE)
+        otaChar = svc.getCharacteristic(Protocol.OTA)
         startWorker()
         ops.trySend(Op.RequestMtu)
         ops.trySend(Op.EnableNotify)

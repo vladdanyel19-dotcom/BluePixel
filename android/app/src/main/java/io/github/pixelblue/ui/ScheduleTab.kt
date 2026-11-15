@@ -121,6 +121,8 @@ fun ScheduleTab(vm: MainViewModel, s: DeviceState, modifier: Modifier) {
             onClick = { vm.ble.send(Protocol.schedule(slots)); saved = true },
             enabled = !saved, modifier = Modifier.fillMaxWidth(),
         ) { Text(stringResource(if (saved) R.string.saved_on_device else R.string.save_to_device)) }
+
+        NightSection(vm, s)
         Spacer(Modifier.height(12.dp))
     }
 }

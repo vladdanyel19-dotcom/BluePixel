@@ -132,6 +132,7 @@ fun DeviceListScreen(ble: PixelBle, conn: ConnState) {
                 }
             }
 
+            LanguageRow()
             TextButton(onClick = { ble.startDemo() }, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.try_demo))
             }

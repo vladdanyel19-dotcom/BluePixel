@@ -17,6 +17,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FormatColorFill
+import androidx.compose.material.icons.filled.Image
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.material.icons.filled.LayersClear
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -55,6 +61,10 @@ fun DrawTab(vm: MainViewModel, s: DeviceState, modifier: Modifier) {
     val h = s.config.height.coerceAtLeast(1)
     vm.ensureCanvas(w, h)
     var brush by rememberSaveable { mutableIntStateOf(PALETTE[0]) }
+    var imageFailed by remember { mutableStateOf(false) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) imageFailed = !vm.importImage(uri, w, h)
+    }
 
     LaunchedEffect(Unit) {
         vm.syncCanvas()
@@ -114,6 +124,11 @@ fun DrawTab(vm: MainViewModel, s: DeviceState, modifier: Modifier) {
                 Icon(Icons.Default.LayersClear, null); Text("  " + stringResource(R.string.clear))
             }
         }
+        OutlinedButton(
+            onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Icon(Icons.Default.Image, null); Text("  " + stringResource(R.string.import_image)) }
+        if (imageFailed) Text(stringResource(R.string.import_failed), color = MaterialTheme.colorScheme.error)
     }
 }
 

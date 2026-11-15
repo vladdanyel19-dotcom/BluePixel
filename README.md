@@ -13,7 +13,14 @@ with a native Android app. No Wi-Fi, no router, no web pages: open the app, tap 
 - **Scrolling text** with a built-in 5×7 font
 - **Schedule kept by the controller**: up to 4 on/off windows per day of the week.
   The light turns on and off by itself, even when your phone is far away.
-- **Remembers everything** after a power cut (color, effect, brightness, schedule)
+- **Remembers everything** after a power cut (color, effect, brightness, schedule, drawing, text)
+- **Scenes**: save your favourite looks and drawings, load them with one tap
+- **Waving flag** effect with ready-made flags and your own colors
+- **Picture import**: any image from the gallery, fitted to the matrix
+- **Music mode**: the lights follow the sound picked up by the phone microphone
+- **Night brightness**: dims automatically between two times you choose
+- **Firmware updates over Bluetooth** from the app (from firmware 0.2 on)
+- Works with original **SP110E** controllers too (colors, brightness, 120 built-in effects)
 - **Current limiter** so a small power supply is never overloaded
 - App in English and Romanian
 

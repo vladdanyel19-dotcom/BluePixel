@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PowerSettingsNew
@@ -49,6 +50,7 @@ private val tabs = listOf(
     Tab(R.string.tab_draw, Icons.Default.Brush),
     Tab(R.string.tab_schedule, Icons.Default.Schedule),
     Tab(R.string.tab_setup, Icons.Default.Settings),
+    Tab(R.string.tab_scenes, Icons.Default.AutoAwesome),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,7 +59,7 @@ fun ControllerScreen(vm: MainViewModel, s: DeviceState) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val isSp = s.kind == Kind.SP110E
     // SP110E: no pixel drawing and no clock, so only Color + Setup.
-    val visible = if (isSp) listOf(0, 3) else listOf(0, 1, 2, 3)
+    val visible = if (isSp) listOf(0, 4, 3) else listOf(0, 1, 4, 2, 3)
     if (tab !in visible) tab = 0
 
     Scaffold(
@@ -107,11 +109,13 @@ fun ControllerScreen(vm: MainViewModel, s: DeviceState) {
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { pad ->
+        UpdateDialog(vm)
         val m = Modifier.fillMaxSize().padding(pad)
         when (tab) {
             0 -> ControlTab(vm, s, m)
             1 -> DrawTab(vm, s, m)
             2 -> ScheduleTab(vm, s, m)
+            4 -> ScenesTab(vm, s, m)
             else -> if (isSp) SpSetupTab(vm, s, m) else SetupTab(vm, s, m)
         }
     }

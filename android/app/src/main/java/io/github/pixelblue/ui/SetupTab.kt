@@ -73,6 +73,7 @@ fun SetupTab(vm: MainViewModel, s: DeviceState, modifier: Modifier) {
         modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        LanguageRow()
         SectionTitle(stringResource(R.string.strip_section))
         Picker(stringResource(R.string.led_type), LED_TYPES, cfg.type) { cfg = cfg.copy(type = it) }
         Picker(stringResource(R.string.color_order), ORDERS, cfg.order) { cfg = cfg.copy(order = it) }
@@ -119,6 +120,7 @@ fun SetupTab(vm: MainViewModel, s: DeviceState, modifier: Modifier) {
             modifier = Modifier.fillMaxWidth(),
         ) { Text(stringResource(R.string.rename)) }
 
+        UpdateSection(vm, s)
         Text(
             stringResource(R.string.device_info, s.chip, s.firmware),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -192,6 +194,7 @@ fun SpSetupTab(vm: MainViewModel, s: DeviceState, modifier: Modifier) {
         modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        LanguageRow()
         Text(stringResource(R.string.sp_intro), color = MaterialTheme.colorScheme.onSurfaceVariant)
         SectionTitle(stringResource(R.string.strip_section))
         Picker(stringResource(R.string.led_type), Sp110e.IC_MODELS, ic) { ic = it }

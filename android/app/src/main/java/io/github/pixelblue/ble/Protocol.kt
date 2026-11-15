@@ -8,9 +8,14 @@ object Protocol {
     val CMD: UUID = UUID.fromString("c0de0002-5ee1-4b1e-9e0d-50a3c1b2e000")
     val STATE: UUID = UUID.fromString("c0de0003-5ee1-4b1e-9e0d-50a3c1b2e000")
     val PIXELS: UUID = UUID.fromString("c0de0004-5ee1-4b1e-9e0d-50a3c1b2e000")
+    val OTA: UUID = UUID.fromString("c0de0005-5ee1-4b1e-9e0d-50a3c1b2e000")
     val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
     const val MAX_SCHEDULES = 4
+    const val FX_CANVAS = 1
+    const val FX_TEXT = 16
+    const val FX_FLAG = 17
+    const val FX_MUSIC = 18
 
     fun power(on: Boolean) = byteArrayOf(0x01, if (on) 1 else 0)
     fun brightness(v: Int) = byteArrayOf(0x02, v.toByte())
@@ -58,6 +63,26 @@ object Protocol {
         return byteArrayOf(0x0B) + bytes
     }
 
+    fun night(n: NightMode) = byteArrayOf(
+        0x0D, n.start.toByte(), (n.start shr 8).toByte(), n.end.toByte(), (n.end shr 8).toByte(),
+        n.level.toByte(), if (n.enabled) 1 else 0,
+    )
+
+    /** Three flag colors as RGB ints. */
+    fun flag(c: List<Int>): ByteArray {
+        val out = ByteArray(10)
+        out[0] = 0x0E
+        c.take(3).forEachIndexed { i, v ->
+            out[1 + i * 3] = (v shr 16).toByte(); out[2 + i * 3] = (v shr 8).toByte(); out[3 + i * 3] = v.toByte()
+        }
+        return out
+    }
+
+    fun music(bands: ByteArray) = byteArrayOf(0x0F) + bands
+    fun otaBegin(size: Int) = byteArrayOf(0x10, size.toByte(), (size shr 8).toByte(), (size shr 16).toByte(), (size shr 24).toByte())
+    val OTA_END = byteArrayOf(0x11)
+    val OTA_ABORT = byteArrayOf(0x12)
+
     // App-internal opcodes used only for SP110E settings (translated in PixelBle).
     fun spIcModel(v: Int) = byteArrayOf(0xF1.toByte(), v.toByte())
     fun spOrder(v: Int) = byteArrayOf(0xF2.toByte(), v.toByte())
@@ -84,6 +109,10 @@ object Protocol {
             schedule = slots,
             r2 = u8(49), g2 = u8(50), b2 = u8(51),
             kind = Kind.PIXELBLUE,
+            night = if (p.size >= 69) NightMode(u16(53), u16(55), u8(57), u8(58) != 0) else NightMode(),
+            flag = if (p.size >= 68) (0 until 3).map { i -> (u8(59 + i * 3) shl 16) or (u8(60 + i * 3) shl 8) or u8(61 + i * 3) } else NightMode.RO_FLAG,
+            nightActive = p.size >= 69 && u8(68) != 0,
+            otaStatus = if (p.size >= 70) u8(69) else 0,
             chip = when (u8(52)) { 0 -> "ESP32"; 1 -> "ESP32-C3"; 2 -> "ESP32-S3"; 3 -> "ESP32-C6"; else -> "ESP32" },
         )
     }
@@ -173,6 +202,17 @@ data class HwConfig(
     }
 }
 
+data class NightMode(
+    val start: Int = 20 * 60,
+    val end: Int = 6 * 60,
+    val level: Int = 40,
+    val enabled: Boolean = false,
+) {
+    companion object {
+        val RO_FLAG = listOf(0x002B7F, 0xFCD116, 0xCE1126)
+    }
+}
+
 data class ScheduleSlot(
     val start: Int = 0,      // minute of day
     val end: Int = 0,
@@ -194,7 +234,15 @@ data class DeviceState(
     val r2: Int, val g2: Int, val b2: Int,
     val chip: String,
     val kind: Kind = Kind.PIXELBLUE,
+    val night: NightMode = NightMode(),
+    val flag: List<Int> = NightMode.RO_FLAG,
+    val nightActive: Boolean = false,
+    val otaStatus: Int = 0,
 ) {
+    val firmwareCode: Int get() = firmware.split(".").let {
+        (it.getOrNull(0)?.toIntOrNull() ?: 0) * 1000 + (it.getOrNull(1)?.toIntOrNull() ?: 0)
+    }
+
     /** Applies a PixelBlue command locally (demo mode, and instant feedback for SP110E). */
     fun apply(cmd: ByteArray): DeviceState {
         if (cmd.isEmpty()) return this
@@ -215,6 +263,9 @@ data class DeviceState(
             0x0A -> copy(effect = 1, power = true)
             0x0B -> copy(effect = 16, power = true)
             0x0C -> copy(r2 = u(1), g2 = u(2), b2 = u(3))
+            0x0D -> copy(night = NightMode(u16(1), u16(3), u(5), u(6) != 0))
+            0x0E -> copy(flag = (0 until 3).map { i -> (u(1 + i * 3) shl 16) or (u(2 + i * 3) shl 8) or u(3 + i * 3) })
+            0x0F -> if (effect != Protocol.FX_MUSIC) copy(effect = Protocol.FX_MUSIC, power = true) else this
             0xF1 -> copy(config = config.copy(type = u(1)))
             0xF2 -> copy(config = config.copy(order = u(1)))
             0xF3 -> copy(config = config.copy(width = u16(1).coerceAtLeast(1)))
@@ -225,7 +276,7 @@ data class DeviceState(
     companion object {
         fun demo() = DeviceState(
             power = true, brightness = 160, effect = 3, speed = 128, r = 255, g = 80, b = 0, w = 0,
-            config = HwConfig(width = 16, height = 16), timeValid = true, effectCount = 17,
+            config = HwConfig(width = 32, height = 8, layout = HwConfig.SERPENTINE or HwConfig.VERTICAL), timeValid = true, effectCount = 19,
             firmware = "demo", schedule = List(Protocol.MAX_SCHEDULES) { ScheduleSlot() },
             r2 = 0, g2 = 0, b2 = 60, chip = "Demo", kind = Kind.PIXELBLUE,
         )
