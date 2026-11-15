@@ -134,7 +134,7 @@ class PixelBle(private val context: Context) {
                         }
                         if (ch == null) { op.done?.invoke(false); continue }
                         val canAck = ch.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
-                        val canFast = ch.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_WITHOUT_RESPONSE != 0
+                        val canFast = ch.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
                         // Live values (sliders, color wheel, music) and pixels go without a reply: lower delay.
                         val fast = canFast && (op.target == Target.PIXELS || op.key != null) || !canAck
                         val type = if (fast) BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
