@@ -134,10 +134,16 @@ class PixelBle(private val context: Context) {
                         }
                         if (ch == null) { op.done?.invoke(false); continue }
                         val canAck = ch.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
-                        val type = if (op.target == Target.PIXELS || !canAck)
-                            BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                        val canFast = ch.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_WITHOUT_RESPONSE != 0
+                        // Live values (sliders, color wheel, music) and pixels go without a reply: lower delay.
+                        val fast = canFast && (op.target == Target.PIXELS || op.key != null) || !canAck
+                        val type = if (fast) BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
                         else BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                        val ok = writeChar(g, ch, data, type) && (type == BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE || awaitOp(5000))
+                        // Android reports every write (with or without reply) in onCharacteristicWrite:
+                        // always wait for it, otherwise the next write finds the link busy and is lost.
+                        var started = writeChar(g, ch, data, type)
+                        if (!started) { delay(30); started = writeChar(g, ch, data, type) }
+                        val ok = started && awaitOp(if (fast) 1000 else 5000)
                         op.done?.invoke(ok)
                     }
                 }
